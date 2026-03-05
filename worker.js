@@ -1,1 +1,778 @@
-1
+// Configuración del Worker
+const CONFIG = {
+  GOOGLE_MAPS_API_KEY: 'AIzaSyDPziXU02y9bKbL-7XkzbaIpOFp_N8nXBM',
+  APP_NAME: 'Marketplace Contraentrega',
+  CACHE_TTL: 3600,
+  VERSION: '1.0.0',
+};
+
+// HTML de la aplicación (minificado pero funcional)
+const HTML_TEMPLATE = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <title>Marketplace Contraentrega - Mapa Mundial</title>
+  
+  <!-- Metadatos PWA -->
+  <meta name="application-name" content="Marketplace Contraentrega">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Marketplace CE">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#000000">
+  
+  <!-- Iconos para PWA -->
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/447/447031.png">
+  <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/447/447031.png">
+  
+  <!-- Manifest para PWA -->
+  <link rel="manifest" href="/manifest.json">
+  
+  <!-- Meta tags -->
+  <meta property="og:title" content="Marketplace Contraentrega">
+  <meta property="og:description" content="Encuentra marketplaces de contraentrega en todo el mundo">
+  <meta property="og:image" content="https://cdn-icons-png.flaticon.com/512/447/447031.png">
+  <meta name="twitter:card" content="summary_large_image">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+  
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { font-family:'Roboto',sans-serif; color:#333; line-height:1.6; touch-action:manipulation; overflow-x:hidden; background:#000; }
+    #contenedor-mapa { height:100vh; display:flex; flex-direction:column; position:relative; }
+    #barra-superior { display:flex; gap:0.8rem; padding:0.8rem; background:#f8f8f8; width:100%; z-index:1000; justify-content:center; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
+    #buscador { flex:1; max-width:500px; padding:0.6rem 1.2rem; border:1px solid #ddd; border-radius:24px; appearance:none; font-size:16px; transition:all 0.3s ease; }
+    #buscador:focus { outline:none; border-color:#0066cc; box-shadow:0 0 0 2px rgba(0,102,204,0.2); }
+    .btn { background:#000; color:#fff; padding:0.6rem 1.2rem; border-radius:24px; text-decoration:none; font-weight:500; transition:all 0.3s ease; border:none; cursor:pointer; white-space:nowrap; display:flex; align-items:center; justify-content:center; gap:5px; border:1px solid #333; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+    .btn:hover { background:#333; transform:translateY(-1px); }
+    .btn:active { transform:translateY(1px); }
+    .btn-centrar { background-color:#000; color:#fff; }
+    #mapa { flex:1; background:#f0f0f0; width:100%; }
+    .cluster-marcadores { background:rgba(40,40,40,0.8); border-radius:50%; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; box-shadow:0 2px 10px rgba(0,0,0,0.3); }
+    .whatsapp-icon { width:16px; height:16px; filter:invert(1); }
+    .popup-buttons { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+    .popup-button-row { display:flex; gap:8px; justify-content:space-between; }
+    .sugerencias-busqueda { position:absolute; top:100%; left:0; right:0; background:white; border-radius:0 0 12px 12px; box-shadow:0 4px 20px rgba(0,0,0,0.15); z-index:1000; max-height:300px; overflow-y:auto; display:none; }
+    .sugerencia-item { padding:12px 15px; cursor:pointer; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; transition:background 0.2s; }
+    .sugerencia-item:hover { background-color:#f5f5f5; }
+    .sugerencia-texto { flex:1; }
+    .sugerencia-boton { margin-left:10px; padding:6px 12px; background-color:#000; color:white; border:none; border-radius:20px; cursor:pointer; font-size:12px; font-weight:500; white-space:nowrap; }
+    .contenedor-buscador { position:relative; flex:1; max-width:500px; }
+    .cargando { display:inline-block; width:20px; height:20px; border:3px solid rgba(0,0,0,.1); border-radius:50%; border-top-color:#000; animation:spin 1s ease-in-out infinite; }
+    .gm-style .gm-style-iw-c { border-radius:12px; padding:12px; max-width:280px !important; }
+    .gm-style .gm-style-iw-d { overflow:auto !important; max-height:400px !important; }
+    .gm-ui-hover-effect { top:8px !important; right:8px !important; }
+    .map-type-selector { position:absolute; bottom:20px; left:10px; z-index:1000; background:white; padding:6px; border-radius:30px; box-shadow:0 2px 10px rgba(0,0,0,0.2); display:flex; gap:4px; }
+    .map-type-btn { padding:8px 16px; border:none; border-radius:30px; cursor:pointer; font-size:14px; font-weight:500; background:#f1f1f1; transition:all 0.3s; }
+    .map-type-btn.active { background:#000; color:white; }
+    .install-banner { position:fixed; bottom:20px; right:20px; background:white; border-radius:12px; padding:12px 16px; box-shadow:0 4px 20px rgba(0,0,0,0.2); display:none; align-items:center; gap:12px; z-index:2000; border:1px solid #ddd; max-width:300px; }
+    .install-banner.show { display:flex; }
+    .install-icon { width:48px; height:48px; border-radius:12px; }
+    .install-text { flex:1; }
+    .install-title { font-weight:bold; font-size:14px; }
+    .install-subtitle { font-size:12px; color:#666; }
+    .install-btn { background:#000; color:white; border:none; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:500; cursor:pointer; white-space:nowrap; }
+    .close-install { background:none; border:none; font-size:18px; cursor:pointer; color:#999; padding:0 4px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @media (max-width:768px) { 
+      #barra-superior { flex-direction:column; gap:0.6rem; }
+      .popup-button-row { flex-direction:column; }
+      .sugerencia-item { flex-direction:column; align-items:flex-start; }
+      .sugerencia-boton { margin-left:0; margin-top:5px; align-self:flex-end; }
+      .map-type-selector { bottom:10px; left:5px; flex-direction:column; gap:4px; padding:4px; }
+      .install-banner { left:20px; right:20px; max-width:none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="contenedor-mapa">
+    <div id="barra-superior">
+      <div class="contenedor-buscador">
+        <input type="search" id="buscador" placeholder="search marketplace by country" enterkeyhint="search">
+        <div id="sugerencias-busqueda" class="sugerencias-busqueda"></div>
+      </div>
+      <button class="btn btn-centrar" id="centrar-btn">CENTER</button>
+    </div>
+    <div id="mapa"></div>
+    <div class="map-type-selector">
+      <button class="map-type-btn active" id="map-btn">Mapa</button>
+      <button class="map-type-btn" id="satellite-btn">Satélite</button>
+    </div>
+  </div>
+
+  <!-- Banner de instalación PWA -->
+  <div id="installBanner" class="install-banner">
+    <img src="https://cdn-icons-png.flaticon.com/512/447/447031.png" class="install-icon" alt="App Icon">
+    <div class="install-text">
+      <div class="install-title">Marketplace CE</div>
+      <div class="install-subtitle">Instalar app</div>
+    </div>
+    <button class="install-btn" id="installBtn">Instalar</button>
+    <button class="close-install" id="closeInstallBtn">×</button>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+  <script>
+    // Configuración inyectada por el worker
+    const GOOGLE_MAPS_API_KEY = '${CONFIG.GOOGLE_MAPS_API_KEY}';
+    const APP_VERSION = '${CONFIG.VERSION}';
+    
+    // Variables globales
+    let mapa;
+    let userMarker;
+    let marcadoresOriginales = [];
+    let googleMapsLayer;
+    let googleSatelliteLayer;
+    let currentLayer;
+    let deferredPrompt;
+
+    // TODOS LOS 197 PAÍSES DEL MUNDO CON SUS CAPITALES
+    const CAPITALES_MUNDIALES = [
+      { "id": "afghanistan", "nombre": "Marketplace Afghanistan", "capital": "Kabul", "pais": "Afghanistan", "latlng": [34.5553, 69.2075], "codigo": "af", "telefono": "+93777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://af.qrcontraentrega.com" },
+      { "id": "albania", "nombre": "Marketplace Albania", "capital": "Tirana", "pais": "Albania", "latlng": [41.3275, 19.8187], "codigo": "al", "telefono": "+355699999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://al.qrcontraentrega.com" },
+      { "id": "algeria", "nombre": "Marketplace Algeria", "capital": "Algiers", "pais": "Algeria", "latlng": [36.7538, 3.0588], "codigo": "dz", "telefono": "+213555555555", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://dz.qrcontraentrega.com" },
+      { "id": "andorra", "nombre": "Marketplace Andorra", "capital": "Andorra la Vella", "pais": "Andorra", "latlng": [42.5063, 1.5218], "codigo": "ad", "telefono": "+376333333", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ad.qrcontraentrega.com" },
+      { "id": "angola", "nombre": "Marketplace Angola", "capital": "Luanda", "pais": "Angola", "latlng": [-8.8390, 13.2894], "codigo": "ao", "telefono": "+244999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ao.qrcontraentrega.com" },
+      { "id": "antigua", "nombre": "Marketplace Antigua and Barbuda", "capital": "Saint John's", "pais": "Antigua and Barbuda", "latlng": [17.1274, -61.8468], "codigo": "ag", "telefono": "+12687777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ag.qrcontraentrega.com" },
+      { "id": "argentina", "nombre": "Marketplace Argentina", "capital": "Buenos Aires", "pais": "Argentina", "latlng": [-34.6037, -58.3816], "codigo": "ar", "telefono": "+5491122223333", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ar.qrcontraentrega.com" },
+      { "id": "armenia", "nombre": "Marketplace Armenia", "capital": "Yerevan", "pais": "Armenia", "latlng": [40.1792, 44.4991], "codigo": "am", "telefono": "+37499999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://am.qrcontraentrega.com" },
+      { "id": "australia", "nombre": "Marketplace Australia", "capital": "Canberra", "pais": "Australia", "latlng": [-35.2809, 149.1300], "codigo": "au", "telefono": "+61400000000", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://au.qrcontraentrega.com" },
+      { "id": "austria", "nombre": "Marketplace Austria", "capital": "Vienna", "pais": "Austria", "latlng": [48.2082, 16.3738], "codigo": "at", "telefono": "+43123456789", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://at.qrcontraentrega.com" },
+      { "id": "azerbaijan", "nombre": "Marketplace Azerbaijan", "capital": "Baku", "pais": "Azerbaijan", "latlng": [40.4093, 49.8671], "codigo": "az", "telefono": "+994999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://az.qrcontraentrega.com" },
+      { "id": "bahamas", "nombre": "Marketplace Bahamas", "capital": "Nassau", "pais": "Bahamas", "latlng": [25.0343, -77.3963], "codigo": "bs", "telefono": "+12427777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bs.qrcontraentrega.com" },
+      { "id": "bahrain", "nombre": "Marketplace Bahrain", "capital": "Manama", "pais": "Bahrain", "latlng": [26.2285, 50.5860], "codigo": "bh", "telefono": "+97399999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bh.qrcontraentrega.com" },
+      { "id": "bangladesh", "nombre": "Marketplace Bangladesh", "capital": "Dhaka", "pais": "Bangladesh", "latlng": [23.8103, 90.4125], "codigo": "bd", "telefono": "+8801999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bd.qrcontraentrega.com" },
+      { "id": "barbados", "nombre": "Marketplace Barbados", "capital": "Bridgetown", "pais": "Barbados", "latlng": [13.1132, -59.5988], "codigo": "bb", "telefono": "+12467777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bb.qrcontraentrega.com" },
+      { "id": "belarus", "nombre": "Marketplace Belarus", "capital": "Minsk", "pais": "Belarus", "latlng": [53.9045, 27.5615], "codigo": "by", "telefono": "+375999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://by.qrcontraentrega.com" },
+      { "id": "belgium", "nombre": "Marketplace Belgium", "capital": "Brussels", "pais": "Belgium", "latlng": [50.8503, 4.3517], "codigo": "be", "telefono": "+32499999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://be.qrcontraentrega.com" },
+      { "id": "belize", "nombre": "Marketplace Belize", "capital": "Belmopan", "pais": "Belize", "latlng": [17.2514, -88.7590], "codigo": "bz", "telefono": "+5016777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bz.qrcontraentrega.com" },
+      { "id": "benin", "nombre": "Marketplace Benin", "capital": "Porto-Novo", "pais": "Benin", "latlng": [6.4969, 2.6289], "codigo": "bj", "telefono": "+22999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bj.qrcontraentrega.com" },
+      { "id": "bhutan", "nombre": "Marketplace Bhutan", "capital": "Thimphu", "pais": "Bhutan", "latlng": [27.4728, 89.6393], "codigo": "bt", "telefono": "+97517777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bt.qrcontraentrega.com" },
+      { "id": "bolivia", "nombre": "Marketplace Bolivia", "capital": "Sucre", "pais": "Bolivia", "latlng": [-19.0196, -65.2619], "codigo": "bo", "telefono": "+59179999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bo.qrcontraentrega.com" },
+      { "id": "bosnia", "nombre": "Marketplace Bosnia and Herzegovina", "capital": "Sarajevo", "pais": "Bosnia and Herzegovina", "latlng": [43.8563, 18.4131], "codigo": "ba", "telefono": "+38766666666", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ba.qrcontraentrega.com" },
+      { "id": "botswana", "nombre": "Marketplace Botswana", "capital": "Gaborone", "pais": "Botswana", "latlng": [-24.6282, 25.9231], "codigo": "bw", "telefono": "+26777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bw.qrcontraentrega.com" },
+      { "id": "brazil", "nombre": "Marketplace Brazil", "capital": "Brasília", "pais": "Brazil", "latlng": [-15.8267, -47.9218], "codigo": "br", "telefono": "+5511999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://br.qrcontraentrega.com" },
+      { "id": "brunei", "nombre": "Marketplace Brunei", "capital": "Bandar Seri Begawan", "pais": "Brunei", "latlng": [4.9031, 114.9398], "codigo": "bn", "telefono": "+6738888888", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bn.qrcontraentrega.com" },
+      { "id": "bulgaria", "nombre": "Marketplace Bulgaria", "capital": "Sofia", "pais": "Bulgaria", "latlng": [42.6977, 23.3219], "codigo": "bg", "telefono": "+359888888888", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bg.qrcontraentrega.com" },
+      { "id": "burkina", "nombre": "Marketplace Burkina Faso", "capital": "Ouagadougou", "pais": "Burkina Faso", "latlng": [12.3714, -1.5197], "codigo": "bf", "telefono": "+22677777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bf.qrcontraentrega.com" },
+      { "id": "burundi", "nombre": "Marketplace Burundi", "capital": "Gitega", "pais": "Burundi", "latlng": [-3.4271, 29.9246], "codigo": "bi", "telefono": "+25779999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://bi.qrcontraentrega.com" },
+      { "id": "cabo-verde", "nombre": "Marketplace Cabo Verde", "capital": "Praia", "pais": "Cabo Verde", "latlng": [14.9330, -23.5133], "codigo": "cv", "telefono": "+2389999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cv.qrcontraentrega.com" },
+      { "id": "cambodia", "nombre": "Marketplace Cambodia", "capital": "Phnom Penh", "pais": "Cambodia", "latlng": [11.5564, 104.9282], "codigo": "kh", "telefono": "+85599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://kh.qrcontraentrega.com" },
+      { "id": "cameroon", "nombre": "Marketplace Cameroon", "capital": "Yaoundé", "pais": "Cameroon", "latlng": [3.8480, 11.5021], "codigo": "cm", "telefono": "+237699999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cm.qrcontraentrega.com" },
+      { "id": "canada", "nombre": "Marketplace Canada", "capital": "Ottawa", "pais": "Canada", "latlng": [45.4215, -75.6972], "codigo": "ca", "telefono": "+16135555555", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ca.qrcontraentrega.com" },
+      { "id": "central-african-republic", "nombre": "Marketplace Central African Republic", "capital": "Bangui", "pais": "Central African Republic", "latlng": [4.3947, 18.5582], "codigo": "cf", "telefono": "+23677777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cf.qrcontraentrega.com" },
+      { "id": "chad", "nombre": "Marketplace Chad", "capital": "N'Djamena", "pais": "Chad", "latlng": [12.1348, 15.0557], "codigo": "td", "telefono": "+23599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://td.qrcontraentrega.com" },
+      { "id": "chile", "nombre": "Marketplace Chile", "capital": "Santiago", "pais": "Chile", "latlng": [-33.4489, -70.6693], "codigo": "cl", "telefono": "+56999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cl.qrcontraentrega.com" },
+      { "id": "china", "nombre": "Marketplace China", "capital": "Beijing", "pais": "China", "latlng": [39.9042, 116.4074], "codigo": "cn", "telefono": "+8613888888888", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cn.qrcontraentrega.com" },
+      { "id": "colombia", "nombre": "Marketplace Colombia", "capital": "Bogotá", "pais": "Colombia", "latlng": [4.7110, -74.0721], "codigo": "co", "telefono": "+571234567890", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://co.qrcontraentrega.com" },
+      { "id": "comoros", "nombre": "Marketplace Comoros", "capital": "Moroni", "pais": "Comoros", "latlng": [-11.7172, 43.2473], "codigo": "km", "telefono": "+2697777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://km.qrcontraentrega.com" },
+      { "id": "congo", "nombre": "Marketplace Congo", "capital": "Brazzaville", "pais": "Congo", "latlng": [-4.2634, 15.2429], "codigo": "cg", "telefono": "+242777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cg.qrcontraentrega.com" },
+      { "id": "costa-rica", "nombre": "Marketplace Costa Rica", "capital": "San José", "pais": "Costa Rica", "latlng": [9.9281, -84.0907], "codigo": "cr", "telefono": "+50688888888", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cr.qrcontraentrega.com" },
+      { "id": "croatia", "nombre": "Marketplace Croatia", "capital": "Zagreb", "pais": "Croatia", "latlng": [45.8150, 15.9819], "codigo": "hr", "telefono": "+385999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://hr.qrcontraentrega.com" },
+      { "id": "cuba", "nombre": "Marketplace Cuba", "capital": "Havana", "pais": "Cuba", "latlng": [23.1136, -82.3666], "codigo": "cu", "telefono": "+5377777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cu.qrcontraentrega.com" },
+      { "id": "cyprus", "nombre": "Marketplace Cyprus", "capital": "Nicosia", "pais": "Cyprus", "latlng": [35.1856, 33.3823], "codigo": "cy", "telefono": "+35799999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cy.qrcontraentrega.com" },
+      { "id": "czech-republic", "nombre": "Marketplace Czech Republic", "capital": "Prague", "pais": "Czech Republic", "latlng": [50.0755, 14.4378], "codigo": "cz", "telefono": "+420777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cz.qrcontraentrega.com" },
+      { "id": "denmark", "nombre": "Marketplace Denmark", "capital": "Copenhagen", "pais": "Denmark", "latlng": [55.6761, 12.5683], "codigo": "dk", "telefono": "+4522222222", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://dk.qrcontraentrega.com" },
+      { "id": "djibouti", "nombre": "Marketplace Djibouti", "capital": "Djibouti", "pais": "Djibouti", "latlng": [11.5721, 43.1456], "codigo": "dj", "telefono": "+25377777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://dj.qrcontraentrega.com" },
+      { "id": "dominica", "nombre": "Marketplace Dominica", "capital": "Roseau", "pais": "Dominica", "latlng": [15.3090, -61.3790], "codigo": "dm", "telefono": "+17677777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://dm.qrcontraentrega.com" },
+      { "id": "dominican-republic", "nombre": "Marketplace Dominican Republic", "capital": "Santo Domingo", "pais": "Dominican Republic", "latlng": [18.4861, -69.9312], "codigo": "do", "telefono": "+18099999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://do.qrcontraentrega.com" },
+      { "id": "drc", "nombre": "Marketplace DR Congo", "capital": "Kinshasa", "pais": "DR Congo", "latlng": [-4.4419, 15.2663], "codigo": "cd", "telefono": "+243999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://cd.qrcontraentrega.com" },
+      { "id": "ecuador", "nombre": "Marketplace Ecuador", "capital": "Quito", "pais": "Ecuador", "latlng": [-0.1807, -78.4678], "codigo": "ec", "telefono": "+593999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ec.qrcontraentrega.com" },
+      { "id": "egypt", "nombre": "Marketplace Egypt", "capital": "Cairo", "pais": "Egypt", "latlng": [30.0444, 31.2357], "codigo": "eg", "telefono": "+201099999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://eg.qrcontraentrega.com" },
+      { "id": "el-salvador", "nombre": "Marketplace El Salvador", "capital": "San Salvador", "pais": "El Salvador", "latlng": [13.6929, -89.2182], "codigo": "sv", "telefono": "+50377777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sv.qrcontraentrega.com" },
+      { "id": "equatorial-guinea", "nombre": "Marketplace Equatorial Guinea", "capital": "Malabo", "pais": "Equatorial Guinea", "latlng": [3.7500, 8.7833], "codigo": "gq", "telefono": "+240777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gq.qrcontraentrega.com" },
+      { "id": "eritrea", "nombre": "Marketplace Eritrea", "capital": "Asmara", "pais": "Eritrea", "latlng": [15.3229, 38.9251], "codigo": "er", "telefono": "+2917777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://er.qrcontraentrega.com" },
+      { "id": "estonia", "nombre": "Marketplace Estonia", "capital": "Tallinn", "pais": "Estonia", "latlng": [59.4370, 24.7536], "codigo": "ee", "telefono": "+37255555555", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ee.qrcontraentrega.com" },
+      { "id": "eswatini", "nombre": "Marketplace Eswatini", "capital": "Mbabane", "pais": "Eswatini", "latlng": [-26.3054, 31.1367], "codigo": "sz", "telefono": "+26877777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sz.qrcontraentrega.com" },
+      { "id": "ethiopia", "nombre": "Marketplace Ethiopia", "capital": "Addis Ababa", "pais": "Ethiopia", "latlng": [9.0320, 38.7469], "codigo": "et", "telefono": "+251999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://et.qrcontraentrega.com" },
+      { "id": "fiji", "nombre": "Marketplace Fiji", "capital": "Suva", "pais": "Fiji", "latlng": [-18.1248, 178.4501], "codigo": "fj", "telefono": "+6799999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://fj.qrcontraentrega.com" },
+      { "id": "finland", "nombre": "Marketplace Finland", "capital": "Helsinki", "pais": "Finland", "latlng": [60.1699, 24.9384], "codigo": "fi", "telefono": "+358505555555", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://fi.qrcontraentrega.com" },
+      { "id": "france", "nombre": "Marketplace France", "capital": "Paris", "pais": "France", "latlng": [48.8566, 2.3522], "codigo": "fr", "telefono": "+33666666666", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://fr.qrcontraentrega.com" },
+      { "id": "gabon", "nombre": "Marketplace Gabon", "capital": "Libreville", "pais": "Gabon", "latlng": [0.4162, 9.4673], "codigo": "ga", "telefono": "+24177777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ga.qrcontraentrega.com" },
+      { "id": "gambia", "nombre": "Marketplace Gambia", "capital": "Banjul", "pais": "Gambia", "latlng": [13.4549, -16.5790], "codigo": "gm", "telefono": "+2207777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gm.qrcontraentrega.com" },
+      { "id": "georgia", "nombre": "Marketplace Georgia", "capital": "Tbilisi", "pais": "Georgia", "latlng": [41.7151, 44.8271], "codigo": "ge", "telefono": "+995599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ge.qrcontraentrega.com" },
+      { "id": "germany", "nombre": "Marketplace Germany", "capital": "Berlin", "pais": "Germany", "latlng": [52.5200, 13.4050], "codigo": "de", "telefono": "+491777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://de.qrcontraentrega.com" },
+      { "id": "ghana", "nombre": "Marketplace Ghana", "capital": "Accra", "pais": "Ghana", "latlng": [5.6037, -0.1870], "codigo": "gh", "telefono": "+233999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gh.qrcontraentrega.com" },
+      { "id": "greece", "nombre": "Marketplace Greece", "capital": "Athens", "pais": "Greece", "latlng": [37.9838, 23.7275], "codigo": "gr", "telefono": "+306999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gr.qrcontraentrega.com" },
+      { "id": "grenada", "nombre": "Marketplace Grenada", "capital": "St. George's", "pais": "Grenada", "latlng": [12.0561, -61.7488], "codigo": "gd", "telefono": "+14737777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gd.qrcontraentrega.com" },
+      { "id": "guatemala", "nombre": "Marketplace Guatemala", "capital": "Guatemala City", "pais": "Guatemala", "latlng": [14.6349, -90.5069], "codigo": "gt", "telefono": "+50255555555", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gt.qrcontraentrega.com" },
+      { "id": "guinea", "nombre": "Marketplace Guinea", "capital": "Conakry", "pais": "Guinea", "latlng": [9.6412, -13.5784], "codigo": "gn", "telefono": "+224777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gn.qrcontraentrega.com" },
+      { "id": "guinea-bissau", "nombre": "Marketplace Guinea-Bissau", "capital": "Bissau", "pais": "Guinea-Bissau", "latlng": [11.8816, -15.6178], "codigo": "gw", "telefono": "+2457777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gw.qrcontraentrega.com" },
+      { "id": "guyana", "nombre": "Marketplace Guyana", "capital": "Georgetown", "pais": "Guyana", "latlng": [6.8013, -58.1551], "codigo": "gy", "telefono": "+5927777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gy.qrcontraentrega.com" },
+      { "id": "haiti", "nombre": "Marketplace Haiti", "capital": "Port-au-Prince", "pais": "Haiti", "latlng": [18.5944, -72.3074], "codigo": "ht", "telefono": "+50977777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ht.qrcontraentrega.com" },
+      { "id": "honduras", "nombre": "Marketplace Honduras", "capital": "Tegucigalpa", "pais": "Honduras", "latlng": [14.0723, -87.1921], "codigo": "hn", "telefono": "+50499999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://hn.qrcontraentrega.com" },
+      { "id": "hungary", "nombre": "Marketplace Hungary", "capital": "Budapest", "pais": "Hungary", "latlng": [47.4979, 19.0402], "codigo": "hu", "telefono": "+36709999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://hu.qrcontraentrega.com" },
+      { "id": "iceland", "nombre": "Marketplace Iceland", "capital": "Reykjavik", "pais": "Iceland", "latlng": [64.1466, -21.9426], "codigo": "is", "telefono": "+3547777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://is.qrcontraentrega.com" },
+      { "id": "india", "nombre": "Marketplace India", "capital": "New Delhi", "pais": "India", "latlng": [28.6139, 77.2090], "codigo": "in", "telefono": "+919999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://in.qrcontraentrega.com" },
+      { "id": "indonesia", "nombre": "Marketplace Indonesia", "capital": "Jakarta", "pais": "Indonesia", "latlng": [-6.2088, 106.8456], "codigo": "id", "telefono": "+628999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://id.qrcontraentrega.com" },
+      { "id": "iran", "nombre": "Marketplace Iran", "capital": "Tehran", "pais": "Iran", "latlng": [35.6892, 51.3890], "codigo": "ir", "telefono": "+989999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ir.qrcontraentrega.com" },
+      { "id": "iraq", "nombre": "Marketplace Iraq", "capital": "Baghdad", "pais": "Iraq", "latlng": [33.3152, 44.3661], "codigo": "iq", "telefono": "+9647777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://iq.qrcontraentrega.com" },
+      { "id": "ireland", "nombre": "Marketplace Ireland", "capital": "Dublin", "pais": "Ireland", "latlng": [53.3498, -6.2603], "codigo": "ie", "telefono": "+353899999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ie.qrcontraentrega.com" },
+      { "id": "israel", "nombre": "Marketplace Israel", "capital": "Jerusalem", "pais": "Israel", "latlng": [31.7683, 35.2137], "codigo": "il", "telefono": "+972599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://il.qrcontraentrega.com" },
+      { "id": "italy", "nombre": "Marketplace Italy", "capital": "Rome", "pais": "Italy", "latlng": [41.9028, 12.4964], "codigo": "it", "telefono": "+393999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://it.qrcontraentrega.com" },
+      { "id": "jamaica", "nombre": "Marketplace Jamaica", "capital": "Kingston", "pais": "Jamaica", "latlng": [18.0179, -76.8099], "codigo": "jm", "telefono": "+18767777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://jm.qrcontraentrega.com" },
+      { "id": "japan", "nombre": "Marketplace Japan", "capital": "Tokyo", "pais": "Japan", "latlng": [35.6762, 139.6503], "codigo": "jp", "telefono": "+819099999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://jp.qrcontraentrega.com" },
+      { "id": "jordan", "nombre": "Marketplace Jordan", "capital": "Amman", "pais": "Jordan", "latlng": [31.9454, 35.9284], "codigo": "jo", "telefono": "+962799999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://jo.qrcontraentrega.com" },
+      { "id": "kazakhstan", "nombre": "Marketplace Kazakhstan", "capital": "Nur-Sultan", "pais": "Kazakhstan", "latlng": [51.1605, 71.4704], "codigo": "kz", "telefono": "+77777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://kz.qrcontraentrega.com" },
+      { "id": "kenya", "nombre": "Marketplace Kenya", "capital": "Nairobi", "pais": "Kenya", "latlng": [-1.2921, 36.8219], "codigo": "ke", "telefono": "+254799999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ke.qrcontraentrega.com" },
+      { "id": "kiribati", "nombre": "Marketplace Kiribati", "capital": "Tarawa", "pais": "Kiribati", "latlng": [1.4518, 173.0337], "codigo": "ki", "telefono": "+6867777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ki.qrcontraentrega.com" },
+      { "id": "korea-north", "nombre": "Marketplace North Korea", "capital": "Pyongyang", "pais": "North Korea", "latlng": [39.0392, 125.7625], "codigo": "kp", "telefono": "+8507777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://kp.qrcontraentrega.com" },
+      { "id": "korea-south", "nombre": "Marketplace South Korea", "capital": "Seoul", "pais": "South Korea", "latlng": [37.5665, 126.9780], "codigo": "kr", "telefono": "+821099999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://kr.qrcontraentrega.com" },
+      { "id": "kosovo", "nombre": "Marketplace Kosovo", "capital": "Pristina", "pais": "Kosovo", "latlng": [42.6629, 21.1655], "codigo": "xk", "telefono": "+38377777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://xk.qrcontraentrega.com" },
+      { "id": "kuwait", "nombre": "Marketplace Kuwait", "capital": "Kuwait City", "pais": "Kuwait", "latlng": [29.3759, 47.9774], "codigo": "kw", "telefono": "+96599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://kw.qrcontraentrega.com" },
+      { "id": "kyrgyzstan", "nombre": "Marketplace Kyrgyzstan", "capital": "Bishkek", "pais": "Kyrgyzstan", "latlng": [42.8746, 74.5698], "codigo": "kg", "telefono": "+996777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://kg.qrcontraentrega.com" },
+      { "id": "laos", "nombre": "Marketplace Laos", "capital": "Vientiane", "pais": "Laos", "latlng": [17.9757, 102.6331], "codigo": "la", "telefono": "+8562099999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://la.qrcontraentrega.com" },
+      { "id": "latvia", "nombre": "Marketplace Latvia", "capital": "Riga", "pais": "Latvia", "latlng": [56.9496, 24.1052], "codigo": "lv", "telefono": "+37129999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://lv.qrcontraentrega.com" },
+      { "id": "lebanon", "nombre": "Marketplace Lebanon", "capital": "Beirut", "pais": "Lebanon", "latlng": [33.8938, 35.5018], "codigo": "lb", "telefono": "+96179999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://lb.qrcontraentrega.com" },
+      { "id": "lesotho", "nombre": "Marketplace Lesotho", "capital": "Maseru", "pais": "Lesotho", "latlng": [-29.3150, 27.4860], "codigo": "ls", "telefono": "+26677777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ls.qrcontraentrega.com" },
+      { "id": "liberia", "nombre": "Marketplace Liberia", "capital": "Monrovia", "pais": "Liberia", "latlng": [6.3008, -10.7971], "codigo": "lr", "telefono": "+231777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://lr.qrcontraentrega.com" },
+      { "id": "libya", "nombre": "Marketplace Libya", "capital": "Tripoli", "pais": "Libya", "latlng": [32.8872, 13.1913], "codigo": "ly", "telefono": "+218999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ly.qrcontraentrega.com" },
+      { "id": "liechtenstein", "nombre": "Marketplace Liechtenstein", "capital": "Vaduz", "pais": "Liechtenstein", "latlng": [47.1410, 9.5209], "codigo": "li", "telefono": "+4237777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://li.qrcontraentrega.com" },
+      { "id": "lithuania", "nombre": "Marketplace Lithuania", "capital": "Vilnius", "pais": "Lithuania", "latlng": [54.6872, 25.2797], "codigo": "lt", "telefono": "+37069999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://lt.qrcontraentrega.com" },
+      { "id": "luxembourg", "nombre": "Marketplace Luxembourg", "capital": "Luxembourg", "pais": "Luxembourg", "latlng": [49.6117, 6.1319], "codigo": "lu", "telefono": "+352777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://lu.qrcontraentrega.com" },
+      { "id": "madagascar", "nombre": "Marketplace Madagascar", "capital": "Antananarivo", "pais": "Madagascar", "latlng": [-18.8792, 47.5079], "codigo": "mg", "telefono": "+261777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mg.qrcontraentrega.com" },
+      { "id": "malawi", "nombre": "Marketplace Malawi", "capital": "Lilongwe", "pais": "Malawi", "latlng": [-13.9626, 33.7741], "codigo": "mw", "telefono": "+265999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mw.qrcontraentrega.com" },
+      { "id": "malaysia", "nombre": "Marketplace Malaysia", "capital": "Kuala Lumpur", "pais": "Malaysia", "latlng": [3.1390, 101.6869], "codigo": "my", "telefono": "+60199999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://my.qrcontraentrega.com" },
+      { "id": "maldives", "nombre": "Marketplace Maldives", "capital": "Malé", "pais": "Maldives", "latlng": [4.1755, 73.5093], "codigo": "mv", "telefono": "+9607777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mv.qrcontraentrega.com" },
+      { "id": "mali", "nombre": "Marketplace Mali", "capital": "Bamako", "pais": "Mali", "latlng": [12.6392, -8.0029], "codigo": "ml", "telefono": "+22377777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ml.qrcontraentrega.com" },
+      { "id": "malta", "nombre": "Marketplace Malta", "capital": "Valletta", "pais": "Malta", "latlng": [35.8989, 14.5146], "codigo": "mt", "telefono": "+35699999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mt.qrcontraentrega.com" },
+      { "id": "marshall-islands", "nombre": "Marketplace Marshall Islands", "capital": "Majuro", "pais": "Marshall Islands", "latlng": [7.1164, 171.1858], "codigo": "mh", "telefono": "+6927777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mh.qrcontraentrega.com" },
+      { "id": "mauritania", "nombre": "Marketplace Mauritania", "capital": "Nouakchott", "pais": "Mauritania", "latlng": [18.0786, -15.9742], "codigo": "mr", "telefono": "+22277777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mr.qrcontraentrega.com" },
+      { "id": "mauritius", "nombre": "Marketplace Mauritius", "capital": "Port Louis", "pais": "Mauritius", "latlng": [-20.1609, 57.5012], "codigo": "mu", "telefono": "+2307777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mu.qrcontraentrega.com" },
+      { "id": "mexico", "nombre": "Marketplace Mexico", "capital": "Mexico City", "pais": "Mexico", "latlng": [19.4326, -99.1332], "codigo": "mx", "telefono": "+525599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mx.qrcontraentrega.com" },
+      { "id": "micronesia", "nombre": "Marketplace Micronesia", "capital": "Palikir", "pais": "Micronesia", "latlng": [6.9147, 158.1610], "codigo": "fm", "telefono": "+6917777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://fm.qrcontraentrega.com" },
+      { "id": "moldova", "nombre": "Marketplace Moldova", "capital": "Chișinău", "pais": "Moldova", "latlng": [47.0105, 28.8638], "codigo": "md", "telefono": "+37379999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://md.qrcontraentrega.com" },
+      { "id": "monaco", "nombre": "Marketplace Monaco", "capital": "Monaco", "pais": "Monaco", "latlng": [43.7384, 7.4246], "codigo": "mc", "telefono": "+37777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mc.qrcontraentrega.com" },
+      { "id": "mongolia", "nombre": "Marketplace Mongolia", "capital": "Ulaanbaatar", "pais": "Mongolia", "latlng": [47.9189, 106.9176], "codigo": "mn", "telefono": "+97699999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mn.qrcontraentrega.com" },
+      { "id": "montenegro", "nombre": "Marketplace Montenegro", "capital": "Podgorica", "pais": "Montenegro", "latlng": [42.4304, 19.2594], "codigo": "me", "telefono": "+38277777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://me.qrcontraentrega.com" },
+      { "id": "morocco", "nombre": "Marketplace Morocco", "capital": "Rabat", "pais": "Morocco", "latlng": [34.0209, -6.8416], "codigo": "ma", "telefono": "+212699999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ma.qrcontraentrega.com" },
+      { "id": "mozambique", "nombre": "Marketplace Mozambique", "capital": "Maputo", "pais": "Mozambique", "latlng": [-25.9692, 32.5732], "codigo": "mz", "telefono": "+258899999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mz.qrcontraentrega.com" },
+      { "id": "myanmar", "nombre": "Marketplace Myanmar", "capital": "Naypyidaw", "pais": "Myanmar", "latlng": [19.7633, 96.0785], "codigo": "mm", "telefono": "+95999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mm.qrcontraentrega.com" },
+      { "id": "namibia", "nombre": "Marketplace Namibia", "capital": "Windhoek", "pais": "Namibia", "latlng": [-22.5609, 17.0658], "codigo": "na", "telefono": "+26499999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://na.qrcontraentrega.com" },
+      { "id": "nauru", "nombre": "Marketplace Nauru", "capital": "Yaren", "pais": "Nauru", "latlng": [-0.5467, 166.9211], "codigo": "nr", "telefono": "+6747777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://nr.qrcontraentrega.com" },
+      { "id": "nepal", "nombre": "Marketplace Nepal", "capital": "Kathmandu", "pais": "Nepal", "latlng": [27.7172, 85.3240], "codigo": "np", "telefono": "+9779999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://np.qrcontraentrega.com" },
+      { "id": "netherlands", "nombre": "Marketplace Netherlands", "capital": "Amsterdam", "pais": "Netherlands", "latlng": [52.3676, 4.9041], "codigo": "nl", "telefono": "+31699999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://nl.qrcontraentrega.com" },
+      { "id": "new-zealand", "nombre": "Marketplace New Zealand", "capital": "Wellington", "pais": "New Zealand", "latlng": [-41.2866, 174.7756], "codigo": "nz", "telefono": "+64219999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://nz.qrcontraentrega.com" },
+      { "id": "nicaragua", "nombre": "Marketplace Nicaragua", "capital": "Managua", "pais": "Nicaragua", "latlng": [12.1364, -86.2514], "codigo": "ni", "telefono": "+50588888888", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ni.qrcontraentrega.com" },
+      { "id": "niger", "nombre": "Marketplace Niger", "capital": "Niamey", "pais": "Niger", "latlng": [13.5127, 2.1126], "codigo": "ne", "telefono": "+22777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ne.qrcontraentrega.com" },
+      { "id": "nigeria", "nombre": "Marketplace Nigeria", "capital": "Abuja", "pais": "Nigeria", "latlng": [9.0579, 7.4951], "codigo": "ng", "telefono": "+2349999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ng.qrcontraentrega.com" },
+      { "id": "north-macedonia", "nombre": "Marketplace North Macedonia", "capital": "Skopje", "pais": "North Macedonia", "latlng": [41.9973, 21.4280], "codigo": "mk", "telefono": "+38977777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://mk.qrcontraentrega.com" },
+      { "id": "norway", "nombre": "Marketplace Norway", "capital": "Oslo", "pais": "Norway", "latlng": [59.9139, 10.7522], "codigo": "no", "telefono": "+4799999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://no.qrcontraentrega.com" },
+      { "id": "oman", "nombre": "Marketplace Oman", "capital": "Muscat", "pais": "Oman", "latlng": [23.5880, 58.3829], "codigo": "om", "telefono": "+96899999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://om.qrcontraentrega.com" },
+      { "id": "pakistan", "nombre": "Marketplace Pakistan", "capital": "Islamabad", "pais": "Pakistan", "latlng": [33.6844, 73.0479], "codigo": "pk", "telefono": "+923000000000", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://pk.qrcontraentrega.com" },
+      { "id": "palau", "nombre": "Marketplace Palau", "capital": "Ngerulmud", "pais": "Palau", "latlng": [7.5004, 134.6243], "codigo": "pw", "telefono": "+6807777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://pw.qrcontraentrega.com" },
+      { "id": "palestine", "nombre": "Marketplace Palestine", "capital": "Ramallah", "pais": "Palestine", "latlng": [31.9038, 35.2034], "codigo": "ps", "telefono": "+970599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ps.qrcontraentrega.com" },
+      { "id": "panama", "nombre": "Marketplace Panama", "capital": "Panama City", "pais": "Panama", "latlng": [8.9824, -79.5199], "codigo": "pa", "telefono": "+50777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://pa.qrcontraentrega.com" },
+      { "id": "papua-new-guinea", "nombre": "Marketplace Papua New Guinea", "capital": "Port Moresby", "pais": "Papua New Guinea", "latlng": [-9.4438, 147.1803], "codigo": "pg", "telefono": "+67577777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://pg.qrcontraentrega.com" },
+      { "id": "paraguay", "nombre": "Marketplace Paraguay", "capital": "Asunción", "pais": "Paraguay", "latlng": [-25.2637, -57.5759], "codigo": "py", "telefono": "+595999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://py.qrcontraentrega.com" },
+      { "id": "peru", "nombre": "Marketplace Peru", "capital": "Lima", "pais": "Peru", "latlng": [-12.0464, -77.0428], "codigo": "pe", "telefono": "+51999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://pe.qrcontraentrega.com" },
+      { "id": "philippines", "nombre": "Marketplace Philippines", "capital": "Manila", "pais": "Philippines", "latlng": [14.5995, 120.9842], "codigo": "ph", "telefono": "+639999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ph.qrcontraentrega.com" },
+      { "id": "poland", "nombre": "Marketplace Poland", "capital": "Warsaw", "pais": "Poland", "latlng": [52.2297, 21.0122], "codigo": "pl", "telefono": "+48699999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://pl.qrcontraentrega.com" },
+      { "id": "portugal", "nombre": "Marketplace Portugal", "capital": "Lisbon", "pais": "Portugal", "latlng": [38.7223, -9.1393], "codigo": "pt", "telefono": "+351999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://pt.qrcontraentrega.com" },
+      { "id": "qatar", "nombre": "Marketplace Qatar", "capital": "Doha", "pais": "Qatar", "latlng": [25.2854, 51.5310], "codigo": "qa", "telefono": "+97477777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://qa.qrcontraentrega.com" },
+      { "id": "romania", "nombre": "Marketplace Romania", "capital": "Bucharest", "pais": "Romania", "latlng": [44.4268, 26.1025], "codigo": "ro", "telefono": "+40777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ro.qrcontraentrega.com" },
+      { "id": "russia", "nombre": "Marketplace Russia", "capital": "Moscow", "pais": "Russia", "latlng": [55.7558, 37.6173], "codigo": "ru", "telefono": "+79999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ru.qrcontraentrega.com" },
+      { "id": "rwanda", "nombre": "Marketplace Rwanda", "capital": "Kigali", "pais": "Rwanda", "latlng": [-1.9441, 30.0619], "codigo": "rw", "telefono": "+250788888888", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://rw.qrcontraentrega.com" },
+      { "id": "saint-kitts", "nombre": "Marketplace Saint Kitts and Nevis", "capital": "Basseterre", "pais": "Saint Kitts and Nevis", "latlng": [17.3026, -62.7177], "codigo": "kn", "telefono": "+18697777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://kn.qrcontraentrega.com" },
+      { "id": "saint-lucia", "nombre": "Marketplace Saint Lucia", "capital": "Castries", "pais": "Saint Lucia", "latlng": [14.0101, -60.9875], "codigo": "lc", "telefono": "+17587777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://lc.qrcontraentrega.com" },
+      { "id": "saint-vincent", "nombre": "Marketplace Saint Vincent and the Grenadines", "capital": "Kingstown", "pais": "Saint Vincent and the Grenadines", "latlng": [13.1600, -61.2248], "codigo": "vc", "telefono": "+17847777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://vc.qrcontraentrega.com" },
+      { "id": "samoa", "nombre": "Marketplace Samoa", "capital": "Apia", "pais": "Samoa", "latlng": [-13.8507, -171.7514], "codigo": "ws", "telefono": "+6857777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ws.qrcontraentrega.com" },
+      { "id": "san-marino", "nombre": "Marketplace San Marino", "capital": "San Marino", "pais": "San Marino", "latlng": [43.9424, 12.4578], "codigo": "sm", "telefono": "+3787777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sm.qrcontraentrega.com" },
+      { "id": "sao-tome", "nombre": "Marketplace Sao Tome and Principe", "capital": "São Tomé", "pais": "Sao Tome and Principe", "latlng": [0.3302, 6.7333], "codigo": "st", "telefono": "+2397777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://st.qrcontraentrega.com" },
+      { "id": "saudi-arabia", "nombre": "Marketplace Saudi Arabia", "capital": "Riyadh", "pais": "Saudi Arabia", "latlng": [24.7136, 46.6753], "codigo": "sa", "telefono": "+966599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sa.qrcontraentrega.com" },
+      { "id": "senegal", "nombre": "Marketplace Senegal", "capital": "Dakar", "pais": "Senegal", "latlng": [14.7167, -17.4677], "codigo": "sn", "telefono": "+221777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sn.qrcontraentrega.com" },
+      { "id": "serbia", "nombre": "Marketplace Serbia", "capital": "Belgrade", "pais": "Serbia", "latlng": [44.7866, 20.4489], "codigo": "rs", "telefono": "+38169999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://rs.qrcontraentrega.com" },
+      { "id": "seychelles", "nombre": "Marketplace Seychelles", "capital": "Victoria", "pais": "Seychelles", "latlng": [-4.6191, 55.4513], "codigo": "sc", "telefono": "+2487777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sc.qrcontraentrega.com" },
+      { "id": "sierra-leone", "nombre": "Marketplace Sierra Leone", "capital": "Freetown", "pais": "Sierra Leone", "latlng": [8.4841, -13.2299], "codigo": "sl", "telefono": "+23277777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sl.qrcontraentrega.com" },
+      { "id": "singapore", "nombre": "Marketplace Singapore", "capital": "Singapore", "pais": "Singapore", "latlng": [1.3521, 103.8198], "codigo": "sg", "telefono": "+6599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sg.qrcontraentrega.com" },
+      { "id": "slovakia", "nombre": "Marketplace Slovakia", "capital": "Bratislava", "pais": "Slovakia", "latlng": [48.1486, 17.1077], "codigo": "sk", "telefono": "+421999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sk.qrcontraentrega.com" },
+      { "id": "slovenia", "nombre": "Marketplace Slovenia", "capital": "Ljubljana", "pais": "Slovenia", "latlng": [46.0569, 14.5058], "codigo": "si", "telefono": "+38669999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://si.qrcontraentrega.com" },
+      { "id": "solomon-islands", "nombre": "Marketplace Solomon Islands", "capital": "Honiara", "pais": "Solomon Islands", "latlng": [-9.4333, 159.9500], "codigo": "sb", "telefono": "+6777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sb.qrcontraentrega.com" },
+      { "id": "somalia", "nombre": "Marketplace Somalia", "capital": "Mogadishu", "pais": "Somalia", "latlng": [2.0469, 45.3182], "codigo": "so", "telefono": "+252777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://so.qrcontraentrega.com" },
+      { "id": "south-africa", "nombre": "Marketplace South Africa", "capital": "Pretoria", "pais": "South Africa", "latlng": [-25.7479, 28.2293], "codigo": "za", "telefono": "+27799999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://za.qrcontraentrega.com" },
+      { "id": "south-sudan", "nombre": "Marketplace South Sudan", "capital": "Juba", "pais": "South Sudan", "latlng": [4.8594, 31.5713], "codigo": "ss", "telefono": "+211999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ss.qrcontraentrega.com" },
+      { "id": "spain", "nombre": "Marketplace Spain", "capital": "Madrid", "pais": "Spain", "latlng": [40.4168, -3.7038], "codigo": "es", "telefono": "+34666666666", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://es.qrcontraentrega.com" },
+      { "id": "sri-lanka", "nombre": "Marketplace Sri Lanka", "capital": "Sri Jayawardenepura Kotte", "pais": "Sri Lanka", "latlng": [6.8941, 79.9020], "codigo": "lk", "telefono": "+94777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://lk.qrcontraentrega.com" },
+      { "id": "sudan", "nombre": "Marketplace Sudan", "capital": "Khartoum", "pais": "Sudan", "latlng": [15.5007, 32.5599], "codigo": "sd", "telefono": "+249999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sd.qrcontraentrega.com" },
+      { "id": "suriname", "nombre": "Marketplace Suriname", "capital": "Paramaribo", "pais": "Suriname", "latlng": [5.8520, -55.2038], "codigo": "sr", "telefono": "+5977777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sr.qrcontraentrega.com" },
+      { "id": "sweden", "nombre": "Marketplace Sweden", "capital": "Stockholm", "pais": "Sweden", "latlng": [59.3293, 18.0686], "codigo": "se", "telefono": "+46777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://se.qrcontraentrega.com" },
+      { "id": "switzerland", "nombre": "Marketplace Switzerland", "capital": "Bern", "pais": "Switzerland", "latlng": [46.9480, 7.4474], "codigo": "ch", "telefono": "+41799999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ch.qrcontraentrega.com" },
+      { "id": "syria", "nombre": "Marketplace Syria", "capital": "Damascus", "pais": "Syria", "latlng": [33.5138, 36.2765], "codigo": "sy", "telefono": "+963999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://sy.qrcontraentrega.com" },
+      { "id": "taiwan", "nombre": "Marketplace Taiwan", "capital": "Taipei", "pais": "Taiwan", "latlng": [25.0330, 121.5654], "codigo": "tw", "telefono": "+886999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tw.qrcontraentrega.com" },
+      { "id": "tajikistan", "nombre": "Marketplace Tajikistan", "capital": "Dushanbe", "pais": "Tajikistan", "latlng": [38.5598, 68.7870], "codigo": "tj", "telefono": "+992777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tj.qrcontraentrega.com" },
+      { "id": "tanzania", "nombre": "Marketplace Tanzania", "capital": "Dodoma", "pais": "Tanzania", "latlng": [-6.1623, 35.7516], "codigo": "tz", "telefono": "+255777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tz.qrcontraentrega.com" },
+      { "id": "thailand", "nombre": "Marketplace Thailand", "capital": "Bangkok", "pais": "Thailand", "latlng": [13.7563, 100.5018], "codigo": "th", "telefono": "+66999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://th.qrcontraentrega.com" },
+      { "id": "timor-leste", "nombre": "Marketplace Timor-Leste", "capital": "Dili", "pais": "Timor-Leste", "latlng": [-8.5569, 125.5603], "codigo": "tl", "telefono": "+67077777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tl.qrcontraentrega.com" },
+      { "id": "togo", "nombre": "Marketplace Togo", "capital": "Lomé", "pais": "Togo", "latlng": [6.1725, 1.2318], "codigo": "tg", "telefono": "+22899999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tg.qrcontraentrega.com" },
+      { "id": "tonga", "nombre": "Marketplace Tonga", "capital": "Nuku'alofa", "pais": "Tonga", "latlng": [-21.1394, -175.2048], "codigo": "to", "telefono": "+6767777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://to.qrcontraentrega.com" },
+      { "id": "trinidad", "nombre": "Marketplace Trinidad and Tobago", "capital": "Port of Spain", "pais": "Trinidad and Tobago", "latlng": [10.6545, -61.5089], "codigo": "tt", "telefono": "+18687777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tt.qrcontraentrega.com" },
+      { "id": "tunisia", "nombre": "Marketplace Tunisia", "capital": "Tunis", "pais": "Tunisia", "latlng": [36.8065, 10.1815], "codigo": "tn", "telefono": "+21699999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tn.qrcontraentrega.com" },
+      { "id": "turkey", "nombre": "Marketplace Turkey", "capital": "Ankara", "pais": "Turkey", "latlng": [39.9334, 32.8597], "codigo": "tr", "telefono": "+905999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tr.qrcontraentrega.com" },
+      { "id": "turkmenistan", "nombre": "Marketplace Turkmenistan", "capital": "Ashgabat", "pais": "Turkmenistan", "latlng": [37.9601, 58.3261], "codigo": "tm", "telefono": "+99377777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tm.qrcontraentrega.com" },
+      { "id": "tuvalu", "nombre": "Marketplace Tuvalu", "capital": "Funafuti", "pais": "Tuvalu", "latlng": [-8.5200, 179.1950], "codigo": "tv", "telefono": "+6887777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://tv.qrcontraentrega.com" },
+      { "id": "uganda", "nombre": "Marketplace Uganda", "capital": "Kampala", "pais": "Uganda", "latlng": [0.3476, 32.5825], "codigo": "ug", "telefono": "+256777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ug.qrcontraentrega.com" },
+      { "id": "ukraine", "nombre": "Marketplace Ukraine", "capital": "Kyiv", "pais": "Ukraine", "latlng": [50.4501, 30.5234], "codigo": "ua", "telefono": "+380999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ua.qrcontraentrega.com" },
+      { "id": "uae", "nombre": "Marketplace United Arab Emirates", "capital": "Abu Dhabi", "pais": "United Arab Emirates", "latlng": [24.4539, 54.3773], "codigo": "ae", "telefono": "+971599999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ae.qrcontraentrega.com" },
+      { "id": "uk", "nombre": "Marketplace United Kingdom", "capital": "London", "pais": "United Kingdom", "latlng": [51.5074, -0.1278], "codigo": "gb", "telefono": "+447999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://gb.qrcontraentrega.com" },
+      { "id": "usa", "nombre": "Marketplace United States", "capital": "Washington, D.C.", "pais": "United States", "latlng": [38.9072, -77.0369], "codigo": "us", "telefono": "+12025555555", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://us.qrcontraentrega.com" },
+      { "id": "uruguay", "nombre": "Marketplace Uruguay", "capital": "Montevideo", "pais": "Uruguay", "latlng": [-34.9011, -56.1645], "codigo": "uy", "telefono": "+59899999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://uy.qrcontraentrega.com" },
+      { "id": "uzbekistan", "nombre": "Marketplace Uzbekistan", "capital": "Tashkent", "pais": "Uzbekistan", "latlng": [41.2995, 69.2401], "codigo": "uz", "telefono": "+998999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://uz.qrcontraentrega.com" },
+      { "id": "vanuatu", "nombre": "Marketplace Vanuatu", "capital": "Port Vila", "pais": "Vanuatu", "latlng": [-17.7333, 168.3273], "codigo": "vu", "telefono": "+6787777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://vu.qrcontraentrega.com" },
+      { "id": "vatican", "nombre": "Marketplace Vatican City", "capital": "Vatican City", "pais": "Vatican City", "latlng": [41.9029, 12.4534], "codigo": "va", "telefono": "+390669999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://va.qrcontraentrega.com" },
+      { "id": "venezuela", "nombre": "Marketplace Venezuela", "capital": "Caracas", "pais": "Venezuela", "latlng": [10.4806, -66.9036], "codigo": "ve", "telefono": "+584129999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ve.qrcontraentrega.com" },
+      { "id": "vietnam", "nombre": "Marketplace Vietnam", "capital": "Hanoi", "pais": "Vietnam", "latlng": [21.0285, 105.8542], "codigo": "vn", "telefono": "+84999999999", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://vn.qrcontraentrega.com" },
+      { "id": "yemen", "nombre": "Marketplace Yemen", "capital": "Sana'a", "pais": "Yemen", "latlng": [15.3694, 44.1910], "codigo": "ye", "telefono": "+967777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://ye.qrcontraentrega.com" },
+      { "id": "zambia", "nombre": "Marketplace Zambia", "capital": "Lusaka", "pais": "Zambia", "latlng": [-15.3875, 28.3228], "codigo": "zm", "telefono": "+260977777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://zm.qrcontraentrega.com" },
+      { "id": "zimbabwe", "nombre": "Marketplace Zimbabwe", "capital": "Harare", "pais": "Zimbabwe", "latlng": [-17.8252, 31.0335], "codigo": "zw", "telefono": "+263777777777", "horario": "Lunes a Viernes: 8am-6pm", "servicios": "Envíos nacionales e internacionales", "url": "https://zw.qrcontraentrega.com" }
+    ];
+
+    let mapa;
+    let userMarker;
+    let marcadoresOriginales = [];
+    let googleMapsLayer;
+    let googleSatelliteLayer;
+    let currentLayer;
+    let deferredPrompt;
+
+    document.addEventListener('DOMContentLoaded', function() {
+      initializeMap();
+      
+      document.getElementById('centrar-btn').addEventListener('click', centrarMapa);
+      
+      document.getElementById('map-btn').addEventListener('click', function() {
+        switchToMapView();
+      });
+      
+      document.getElementById('satellite-btn').addEventListener('click', function() {
+        switchToSatelliteView();
+      });
+      
+      const searchInput = document.getElementById('buscador');
+      searchInput.addEventListener('input', handleSearchInput);
+      searchInput.addEventListener('keydown', handleSearchKeydown);
+      
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.contenedor-buscador')) {
+          document.getElementById('sugerencias-busqueda').style.display = 'none';
+        }
+      });
+
+      setupPWA();
+    });
+
+    function setupPWA() {
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        setTimeout(() => {
+          showInstallBanner();
+        }, 2000);
+      });
+
+      if (window.matchMedia('(display-mode: standalone)').matches || 
+          window.navigator.standalone === true) {
+        console.log('App ejecutándose en modo standalone');
+      }
+
+      document.getElementById('installBtn').addEventListener('click', installPWA);
+      document.getElementById('closeInstallBtn').addEventListener('click', () => {
+        document.getElementById('installBanner').classList.remove('show');
+      });
+    }
+
+    function showInstallBanner() {
+      if (deferredPrompt) {
+        document.getElementById('installBanner').classList.add('show');
+      }
+    }
+
+    function installPWA() {
+      if (!deferredPrompt) return;
+      
+      deferredPrompt.prompt();
+      
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('Usuario aceptó instalar la PWA');
+        }
+        deferredPrompt = null;
+        document.getElementById('installBanner').classList.remove('show');
+      });
+    }
+
+    function initializeMap() {
+      mapa = L.map('mapa', {
+        center: [20, 0],
+        zoom: 2,
+        zoomControl: false
+      });
+
+      L.control.zoom({ position: 'bottomright' }).addTo(mapa);
+
+      // Capas de Google Maps con API key
+      googleMapsLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=' + GOOGLE_MAPS_API_KEY, {
+        maxZoom: 20,
+        attribution: '&copy; <a href="https://maps.google.com">Google Maps</a>',
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+      });
+
+      googleSatelliteLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&key=' + GOOGLE_MAPS_API_KEY, {
+        maxZoom: 20,
+        attribution: '&copy; <a href="https://maps.google.com">Google Maps</a>',
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+      });
+
+      currentLayer = googleMapsLayer;
+      currentLayer.addTo(mapa);
+
+      setTimeout(() => {
+        mapa.invalidateSize();
+      }, 0);
+
+      const clusters = L.markerClusterGroup({
+        iconCreateFunction: cluster => L.divIcon({
+          html: '<div>' + cluster.getChildCount() + '</div>',
+          className: 'cluster-marcadores',
+          iconSize: [40, 40]
+        }),
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        maxClusterRadius: 50
+      });
+
+      CAPITALES_MUNDIALES.forEach(loc => {
+        const marcador = L.marker(loc.latlng, {
+          icon: L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/447/447031.png',
+            iconSize: [32, 32],
+            className: 'marker-icon'
+          })
+        }).bindPopup(\`
+          <div style="min-width:220px; max-width:260px">
+            <h3 style="margin:0 0 5px 0;color:#0066cc;font-size:16px">\${loc.nombre}</h3>
+            <p style="margin:0 0 5px 0;font-size:13px"><strong>País:</strong> \${loc.pais}</p>
+            <p style="margin:0 0 5px 0;font-size:13px"><strong>Capital:</strong> \${loc.capital}</p>
+            \${loc.telefono ? '<p style="margin:0 0 5px 0;font-size:13px"><strong>Teléfono:</strong> ' + loc.telefono + '</p>' : ''}
+            \${loc.horario ? '<p style="margin:0 0 5px 0;font-size:13px"><strong>Horario:</strong> ' + loc.horario + '</p>' : ''}
+            \${loc.servicios ? '<p style="margin:0 0 8px 0;font-size:13px"><strong>Servicios:</strong> ' + loc.servicios + '</p>' : ''}
+            <div class="popup-buttons">
+              <div class="popup-button-row">
+                <button class="btn" onclick="abrirWhatsApp('\${loc.telefono}', '\${loc.nombre}')" style="background:#25D366;border-color:#128C7E;flex:1">
+                  <img src="https://cdn-icons-png.flaticon.com/512/220/220236.png" class="whatsapp-icon" alt="WhatsApp" style="width:16px;height:16px;filter:invert(1);margin-right:5px">
+                  WhatsApp
+                </button>
+              </div>
+              <div class="popup-button-row">
+                <button class="btn" onclick="abrirGoogleMapsConDireccion('\${loc.latlng[0]}', '\${loc.latlng[1]}', '\${loc.capital}')" style="background:#4285F4;border-color:#3367D6;flex:1">Google Maps</button>
+                <button class="btn" onclick="window.open('\${loc.url}', '_blank')" style="background:#000000;border-color:#333;flex:1">Marketplace</button>
+              </div>
+            </div>
+          </div>
+        \`);
+        
+        marcador.datosUbicacion = loc;
+        marcadoresOriginales.push(marcador);
+      });
+
+      clusters.addLayers(marcadoresOriginales);
+      mapa.addLayer(clusters);
+
+      setTimeout(() => {
+        obtenerUbicacionUsuario();
+      }, 1000);
+    }
+
+    function switchToMapView() {
+      mapa.removeLayer(currentLayer);
+      currentLayer = googleMapsLayer;
+      currentLayer.addTo(mapa);
+      
+      document.getElementById('map-btn').classList.add('active');
+      document.getElementById('satellite-btn').classList.remove('active');
+    }
+
+    function switchToSatelliteView() {
+      mapa.removeLayer(currentLayer);
+      currentLayer = googleSatelliteLayer;
+      currentLayer.addTo(mapa);
+      
+      document.getElementById('satellite-btn').classList.add('active');
+      document.getElementById('map-btn').classList.remove('active');
+    }
+
+    function abrirGoogleMapsConDireccion(lat, lng, nombre) {
+      const url = 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lng + '&travelmode=driving&dir_action=navigate';
+      window.open(url, '_blank');
+    }
+
+    function handleSearchInput(e) {
+      clearTimeout(window.buscadorTimeout);
+      const termino = e.target.value.trim();
+      const sugerenciasContainer = document.getElementById('sugerencias-busqueda');
+      
+      if (termino.length < 2) {
+        sugerenciasContainer.style.display = 'none';
+        return;
+      }
+      
+      sugerenciasContainer.innerHTML = '<div class="sugerencia-item">Buscando... <span class="cargando"></span></div>';
+      sugerenciasContainer.style.display = 'block';
+      
+      window.buscadorTimeout = setTimeout(() => {
+        buscarEnCapitales(termino);
+      }, 300);
+    }
+
+    function buscarEnCapitales(termino) {
+      const sugerenciasContainer = document.getElementById('sugerencias-busqueda');
+      const terminoLower = termino.toLowerCase();
+      
+      const resultados = CAPITALES_MUNDIALES.filter(pais => 
+        pais.pais.toLowerCase().includes(terminoLower) || 
+        pais.capital.toLowerCase().includes(terminoLower) ||
+        pais.codigo.toLowerCase().includes(terminoLower)
+      );
+      
+      if (resultados.length > 0) {
+        sugerenciasContainer.innerHTML = '';
+        
+        resultados.slice(0, 10).forEach(pais => {
+          const item = document.createElement('div');
+          item.className = 'sugerencia-item';
+          
+          item.innerHTML = \`
+            <div class="sugerencia-texto">
+              <strong>📍 \${pais.capital}</strong><br>
+              <small>\${pais.pais} (\${pais.codigo})</small>
+            </div>
+            <button class="sugerencia-boton" data-codigo="\${pais.codigo}" data-url="\${pais.url}">
+              Marketplace
+            </button>
+          \`;
+          
+          const boton = item.querySelector('.sugerencia-boton');
+          boton.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const url = this.getAttribute('data-url');
+            window.open(url, '_blank');
+            sugerenciasContainer.style.display = 'none';
+          });
+          
+          item.addEventListener('click', function(e) {
+            if (e.target.tagName === 'BUTTON') return;
+            
+            const paisData = resultados.find(r => r.codigo === boton.getAttribute('data-codigo'));
+            if (paisData) {
+              mapa.setView(paisData.latlng, 6);
+              
+              const marcador = marcadoresOriginales.find(m => 
+                m.datosUbicacion.codigo === paisData.codigo
+              );
+              if (marcador) {
+                setTimeout(() => {
+                  marcador.openPopup();
+                }, 300);
+              }
+            }
+            sugerenciasContainer.style.display = 'none';
+          });
+          
+          sugerenciasContainer.appendChild(item);
+        });
+        sugerenciasContainer.style.display = 'block';
+      } else {
+        sugerenciasContainer.innerHTML = '<div class="sugerencia-item">No se encontraron resultados para: ' + termino + '</div>';
+        sugerenciasContainer.style.display = 'block';
+      }
+    }
+
+    function handleSearchKeydown(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const termino = document.getElementById('buscador').value.trim();
+        if (termino) {
+          buscarEnCapitales(termino);
+        }
+      }
+    }
+
+    function abrirWhatsApp(telefono, nombre) {
+      if (!telefono) {
+        alert('Número de teléfono no disponible');
+        return;
+      }
+      const numeroLimpio = telefono.replace(/\\D/g, '');
+      const mensaje = 'Hola, me interesa conocer más sobre ' + nombre;
+      window.open('https://wa.me/' + numeroLimpio + '?text=' + encodeURIComponent(mensaje), '_blank');
+    }
+
+    function centrarMapa() {
+      if (userMarker) {
+        mapa.setView(userMarker.getLatLng(), 10);
+      } else {
+        obtenerUbicacionUsuario();
+      }
+    }
+
+    function obtenerUbicacionUsuario() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+            
+            if (userMarker) {
+              mapa.removeLayer(userMarker);
+            }
+            
+            userMarker = L.marker([latitude, longitude], {
+              icon: L.icon({
+                iconUrl: 'https://cdn-icons-png.flaticon.com/512/456/456212.png',
+                iconSize: [32, 32],
+                className: 'marker-icon-user'
+              })
+            }).addTo(mapa)
+              .bindPopup('Tu ubicación actual');
+              
+            mapa.setView([latitude, longitude], 10);
+          },
+          (error) => {
+            console.log('Error al obtener ubicación: ' + error.message);
+            mapa.setView([20, 0], 2);
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      } else {
+        console.log('Tu navegador no soporta geolocalización.');
+        mapa.setView([20, 0], 2);
+      }
+    }
+
+    window.abrirWhatsApp = abrirWhatsApp;
+    window.abrirGoogleMapsConDireccion = abrirGoogleMapsConDireccion;
+  </script>
+</body>
+</html>`;
+
+// Manejador principal del Worker
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // Configurar headers de seguridad y caché
+    const headers = {
+      'Content-Type': 'text/html; charset=UTF-8',
+      'Cache-Control': `public, max-age=${CONFIG.CACHE_TTL}`,
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'X-XSS-Protection': '1; mode=block',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'geolocation=(self), microphone=(), camera=()',
+    };
+
+    // Servir manifest.json para PWA
+    if (path === '/manifest.json') {
+      const manifest = {
+        name: CONFIG.APP_NAME,
+        short_name: 'Marketplace CE',
+        description: 'Encuentra marketplaces de contraentrega en todo el mundo',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#000000',
+        theme_color: '#000000',
+        icons: [
+          {
+            src: 'https://cdn-icons-png.flaticon.com/512/447/447031.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable'
+          }
+        ],
+        orientation: 'portrait',
+        scope: '/',
+        prefer_related_applications: true,
+        related_applications: [
+          {
+            platform: 'play',
+            url: 'https://play.google.com/store/apps/details?id=com.marketplace.ce',
+            id: 'com.marketplace.ce'
+          },
+          {
+            platform: 'itunes',
+            url: 'https://apps.apple.com/app/id1234567890'
+          }
+        ]
+      };
+
+      return new Response(JSON.stringify(manifest, null, 2), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': `public, max-age=${CONFIG.CACHE_TTL}`,
+        },
+      });
+    }
+
+    // Servir service worker para PWA
+    if (path === '/sw.js') {
+      const sw = `
+        const CACHE_NAME = 'marketplace-ce-v${CONFIG.VERSION}';
+        const urlsToCache = [
+          '/',
+          '/manifest.json',
+          'https://unpkg.com/leaflet@1.7.1/dist/leaflet.css',
+          'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css',
+          'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css',
+          'https://unpkg.com/leaflet@1.7.1/dist/leaflet.js',
+          'https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js'
+        ];
+
+        self.addEventListener('install', event => {
+          event.waitUntil(
+            caches.open(CACHE_NAME)
+              .then(cache => cache.addAll(urlsToCache))
+          );
+        });
+
+        self.addEventListener('fetch', event => {
+          event.respondWith(
+            caches.match(event.request)
+              .then(response => response || fetch(event.request))
+          );
+        });
+
+        self.addEventListener('activate', event => {
+          event.waitUntil(
+            caches.keys().then(cacheNames => {
+              return Promise.all(
+                cacheNames.map(cacheName => {
+                  if (cacheName !== CACHE_NAME) {
+                    return caches.delete(cacheName);
+                  }
+                })
+              );
+            })
+          );
+        });
+      `;
+
+      return new Response(sw, {
+        headers: {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache',
+          'Service-Worker-Allowed': '/'
+        },
+      });
+    }
+
+    // Servir el HTML principal
+    return new Response(HTML_TEMPLATE, { headers });
+  },
+};
